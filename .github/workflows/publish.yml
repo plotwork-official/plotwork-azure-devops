@@ -52,7 +52,7 @@ jobs:
         if: ${{ inputs.whoami }}
         # 499b84ac-1321-427f-aa17-267ca6975798 is Azure DevOps as an Entra resource.
         run: |
-          az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query "{id: id, displayName: displayName}" -o table
+          az rest -u "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1" --resource 499b84ac-1321-427f-aa17-267ca6975798 -o json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: ${{ !inputs.whoami }}
         with:
