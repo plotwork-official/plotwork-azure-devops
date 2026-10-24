@@ -53,7 +53,7 @@ jobs:
   publish:
     name: Publish to the Marketplace
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     environment: marketplace
     permissions:
       contents: read
@@ -121,6 +121,9 @@ jobs:
             echo "share=$share"
             echo "override=$override"
             echo "vsix=$publisher.$id-$version.vsix"
+            echo "publisher=$publisher"
+            echo "id=$id"
+            echo "version=$version"
           } >> "$GITHUB_OUTPUT"
           echo "Publishing $publisher.$id $version (public in the manifest: $public; shared with: ${share:-nobody})." >> "$GITHUB_STEP_SUMMARY"
 
@@ -137,25 +140,55 @@ jobs:
         run: |
           az rest -u "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1" --resource 499b84ac-1321-427f-aa17-267ca6975798 -o json
 
-      # Packed once, so the file published is the file attached to the release.
+      # Packed once, so the file published is the file attached to the release. tfx gives up waiting on the Marketplace's
+      # validation after a few minutes, and a new extension's first validation can take longer, so tfx does not wait: the
+      # step asks for the status itself, every 30 seconds for up to 30 minutes. A version the Marketplace already has (a run
+      # again after such a timeout) is not sent twice, which the Marketplace would refuse; its validation is waited on.
       - name: Pack and publish
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.whoami) }}
         env:
           SHARE_WITH: ${{ steps.plan.outputs.share }}
           OVERRIDE: ${{ steps.plan.outputs.override }}
           VSIX: ${{ steps.plan.outputs.vsix }}
+          PUBLISHER: ${{ steps.plan.outputs.publisher }}
+          EXTENSION_ID: ${{ steps.plan.outputs.id }}
+          VERSION: ${{ steps.plan.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/out"
           override=()
           if [ -n "$OVERRIDE" ]; then override=(--override "$OVERRIDE"); fi
           npx --yes tfx-cli@0.24.2 extension create --root . --manifest-globs vss-extension.json --output-path "$RUNNER_TEMP/out/$VSIX" --no-prompt "${override[@]}"
-          token="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)"
-          echo "::add-mask::$token"
-          share=()
-          if [ -n "$SHARE_WITH" ]; then share=(--share-with "$SHARE_WITH"); fi
-          npx --yes tfx-cli@0.24.2 extension publish --vsix "$RUNNER_TEMP/out/$VSIX" --auth-type pat --token "$token" --no-prompt "${share[@]}"
-          echo "Published $VSIX." >> "$GITHUB_STEP_SUMMARY"
+          new_token() {
+            token="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)"
+            echo "::add-mask::$token"
+          }
+          # success, pending, or error (with the Marketplace's message, or "not published" for a version it does not have).
+          status() {
+            npx --yes tfx-cli@0.24.2 extension isvalid --publisher "$PUBLISHER" --extension-id "$EXTENSION_ID" --version "$VERSION" --auth-type pat --token "$token" --no-prompt --json 2>/dev/null \
+              | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const r=JSON.parse(s.slice(s.indexOf("{")));console.log(r.status==="error"?"error "+(r.message??""):r.status)}catch{console.log("error not published")}})'
+          }
+          new_token
+          before="$(status)"
+          if [ "$before" = "success" ] || [ "$before" = "pending" ]; then
+            echo "The Marketplace already has $EXTENSION_ID $VERSION ($before), so it is not sent again."
+          else
+            share=()
+            if [ -n "$SHARE_WITH" ]; then share=(--share-with "$SHARE_WITH"); fi
+            npx --yes tfx-cli@0.24.2 extension publish --vsix "$RUNNER_TEMP/out/$VSIX" --auth-type pat --token "$token" --no-prompt --no-wait-validation "${share[@]}"
+          fi
+          for attempt in $(seq 1 60); do
+            # The Entra token lasts about an hour; a fresh one every ten tries keeps the wait inside it.
+            if [ $(( attempt % 10 )) -eq 0 ]; then new_token; fi
+            now="$(status)"
+            case "$now" in
+              success) echo "Published $VSIX, and the Marketplace validated it." >> "$GITHUB_STEP_SUMMARY"; exit 0 ;;
+              pending) echo "Validation pending ($attempt of 60)."; sleep 30 ;;
+              *) echo "::error::The Marketplace refused $VSIX: ${now#error }"; exit 1 ;;
+            esac
+          done
+          echo "::error::$VSIX was sent, and the Marketplace had not validated it after 30 minutes. Run this workflow again to keep waiting; the version is not sent twice."
+          exit 1
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: ${{ github.ref_type == 'tag' }}
