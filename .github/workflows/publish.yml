@@ -25,7 +25,14 @@
 # Run it from the Actions tab, for the manual cases:
 #   whoami: true                  prints the service principal's Marketplace ID, to add it to the publisher (one time)
 #   share-with: <organisation>    publishes the default branch privately, shared with that Azure DevOps organisation
+#   smoke: true                   runs only the smoke pipeline (below) against what the organisation has installed
 #   neither                       publishes the default branch as the manifest says
+#
+# After a publish of a tag, the job smoke runs the extension in a real pipeline: the Azure DevOps organisation in
+# AZURE_DEVOPS_SHARE_WITH, its project AZURE_DEVOPS_SMOKE_PROJECT, and the pipeline AZURE_DEVOPS_SMOKE_PIPELINE (its numeric id),
+# made from .azure-pipelines/plotwork-smoke.yml of plotwork-official/plotwork-examples. It signs in as the publish does, so the
+# service principal must also be a user of that organisation, in the project's Contributors. Without the three variables it says
+# so and passes.
 name: Publish
 
 on:
@@ -41,6 +48,10 @@ on:
         description: Share a private extension with this Azure DevOps organisation
         type: string
         default: ""
+      smoke:
+        description: Only run the smoke pipeline against the version the organisation has
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -52,6 +63,7 @@ concurrency:
 jobs:
   publish:
     name: Publish to the Marketplace
+    if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.smoke) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: marketplace
@@ -245,3 +257,118 @@ jobs:
             gh release create "$TAG" "out/$VSIX" --verify-tag --title "$TAG" --notes "$notes" "${flags[@]}"
           fi
           echo "Attached $VSIX to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
+
+  # The extension in a real pipeline: waits until the organisation has the version this run published, queues the smoke
+  # pipeline with the latest stable command line, and passes when every Plotwork step of the run passed on the task version
+  # this release wrote.
+  smoke:
+    name: Run the extension in Azure Pipelines
+    needs: publish
+    if: ${{ !cancelled() && ((github.ref_type == 'tag' && needs.publish.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.smoke)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write # the OIDC token Microsoft Entra signs in with
+    env:
+      ORG: ${{ vars.AZURE_DEVOPS_SHARE_WITH }}
+      PROJECT: ${{ vars.AZURE_DEVOPS_SMOKE_PROJECT }}
+      PIPELINE: ${{ vars.AZURE_DEVOPS_SMOKE_PIPELINE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read what to test
+        id: what
+        run: |
+          set -euo pipefail
+          if [ -z "$ORG" ] || [ -z "$PROJECT" ] || [ -z "$PIPELINE" ]; then
+            echo "::notice::No smoke pipeline: set AZURE_DEVOPS_SHARE_WITH, AZURE_DEVOPS_SMOKE_PROJECT and AZURE_DEVOPS_SMOKE_PIPELINE to run one."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          task=$(node -p "require('./tasks/PlotworkDiagrams/task.json').name")
+          {
+            echo "run=true"
+            echo "publisher=$(node -p "require('./vss-extension.json').publisher")"
+            echo "id=$(node -p "require('./vss-extension.json').id")"
+            echo "version=$(node -p "require('./vss-extension.json').version")"
+            echo "task=$task"
+            echo "task_version=$(node -p "const v=require('./tasks/PlotworkDiagrams/task.json').version; v.Major+'.'+v.Minor+'.'+v.Patch")"
+            if [ "$task" = "PlotworkDiagramsPreview" ]; then echo "channel=preview"; else echo "channel=stable"; fi
+            echo "cli=$(npm view @buun_group/plotwork version)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign in to Microsoft Entra with GitHub's OIDC token
+        if: ${{ steps.what.outputs.run == 'true' }}
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Run the smoke pipeline
+        if: ${{ steps.what.outputs.run == 'true' }}
+        env:
+          PUBLISHER: ${{ steps.what.outputs.publisher }}
+          EXTENSION_ID: ${{ steps.what.outputs.id }}
+          VERSION: ${{ steps.what.outputs.version }}
+          TASK: ${{ steps.what.outputs.task }}
+          TASK_VERSION: ${{ steps.what.outputs.task_version }}
+          CHANNEL: ${{ steps.what.outputs.channel }}
+          CLI: ${{ steps.what.outputs.cli }}
+        run: |
+          set -euo pipefail
+          new_token() {
+            token="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)"
+            echo "::add-mask::$token"
+          }
+          ado() { curl -sS --fail-with-body -H "Authorization: Bearer $token" -H 'Content-Type: application/json' "$@"; }
+          new_token
+
+          # An installed extension takes the new version on its own, usually within minutes.
+          installed=""
+          for attempt in $(seq 1 60); do
+            if [ $(( attempt % 10 )) -eq 0 ]; then new_token; fi
+            installed=$(ado "https://extmgmt.dev.azure.com/$ORG/_apis/extensionmanagement/installedextensionsbyname/$PUBLISHER/$EXTENSION_ID?api-version=7.1-preview.1" 2>/dev/null | jq -r '.version // empty' || true)
+            if [ "$installed" = "$VERSION" ]; then break; fi
+            echo "$ORG has ${installed:-no install of $EXTENSION_ID}; waiting for $VERSION ($attempt of 60)."
+            sleep 30
+          done
+          if [ "$installed" != "$VERSION" ]; then
+            if [ -z "$installed" ]; then
+              echo "::error::$PUBLISHER.$EXTENSION_ID is not installed in $ORG, or the service principal cannot read it. Install it under Organization settings, Extensions, and add the service principal to the organisation."
+            else
+              echo "::error::$ORG still has $EXTENSION_ID $installed after 30 minutes, not $VERSION."
+            fi
+            exit 1
+          fi
+
+          body=$(jq -n --arg channel "$CHANNEL" --arg cli "$CLI" '{templateParameters: {channel: $channel, cliVersion: $cli}}')
+          run=$(ado -X POST "https://dev.azure.com/$ORG/$PROJECT/_apis/pipelines/$PIPELINE/runs?api-version=7.1" -d "$body")
+          id=$(jq -r '.id' <<<"$run")
+          link=$(jq -r '._links.web.href' <<<"$run")
+          echo "Queued run $id with $TASK and @buun_group/plotwork@$CLI: $link"
+
+          state=""
+          for attempt in $(seq 1 60); do
+            if [ $(( attempt % 10 )) -eq 0 ]; then new_token; fi
+            now=$(ado "https://dev.azure.com/$ORG/$PROJECT/_apis/pipelines/$PIPELINE/runs/$id?api-version=7.1")
+            state=$(jq -r '.state' <<<"$now")
+            if [ "$state" = "completed" ]; then break; fi
+            sleep 20
+          done
+          if [ "$state" != "completed" ]; then echo "::error::Run $id had not finished after 20 minutes: $link"; exit 1; fi
+
+          timeline=$(ado "https://dev.azure.com/$ORG/$PROJECT/_apis/build/builds/$id/timeline?api-version=7.1")
+          steps=$(jq -c --arg task "$TASK" '[.records[] | select(.type == "Task" and .task.name == $task) | {name, result, version: .task.version}]' <<<"$timeline")
+          echo "$steps" | jq -r '.[] | "\(.name): \(.result), task \(.version)"'
+          count=$(jq 'length' <<<"$steps")
+          if [ "$count" -lt 2 ]; then echo "::error::Run $id has $count $TASK steps, not 2: $link"; exit 1; fi
+          wrong=$(jq -r --arg v "$TASK_VERSION" '[.[] | select(.version != $v)] | length' <<<"$steps")
+          if [ "$wrong" -ne 0 ]; then echo "::error::Run $id ran $TASK at another version than $TASK_VERSION: $link"; exit 1; fi
+          failed=$(jq -r '[.[] | select(.result != "succeeded")] | length' <<<"$steps")
+          if [ "$failed" -ne 0 ]; then echo "::error::A Plotwork step of run $id failed: $link"; exit 1; fi
+          echo "The smoke pipeline passed with $TASK $TASK_VERSION and @buun_group/plotwork@$CLI: $link" >> "$GITHUB_STEP_SUMMARY"
