@@ -1,0 +1,154 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+  "id": "fa60b84c-39d6-45e9-829b-b9876ee4fa10",
+  "name": "PlotworkDiagrams",
+  "friendlyName": "Plotwork diagrams",
+  "description": "Check, generate, and drift-check Plotwork diagrams with the pinned command line.",
+  "helpUrl": "https://docs.plotwork.dev/diagrams-in-azure-pipelines",
+  "helpMarkDown": "Runs the pinned release of [@buun_group/plotwork](https://www.npmjs.com/package/@buun_group/plotwork) with npx. Needs Node 22 or later on the agent: add `UseNode@1` with `version: 22.x` first. [Guide](https://docs.plotwork.dev/diagrams-in-azure-pipelines)",
+  "category": "Utility",
+  "author": "Buun Group",
+  "runsOn": ["Agent"],
+  "visibility": ["Build", "Release"],
+  "version": {
+    "Major": 1,
+    "Minor": 0,
+    "Patch": 0
+  },
+  "minimumAgentVersion": "3.232.1",
+  "instanceNameFormat": "Plotwork diagrams: $(mode)",
+  "groups": [
+    {
+      "name": "drift",
+      "displayName": "Drift dashboard",
+      "isExpanded": false,
+      "visibleRule": "mode = drift"
+    },
+    {
+      "name": "advanced",
+      "displayName": "Advanced",
+      "isExpanded": false
+    }
+  ],
+  "inputs": [
+    {
+      "name": "mode",
+      "type": "pickList",
+      "label": "Mode",
+      "defaultValue": "check",
+      "required": true,
+      "options": {
+        "check": "check: fail on a stale picture under a diagram fence",
+        "generate": "generate: write the diagrams made from files again",
+        "drift": "drift: fail when a diagram made from files has drifted"
+      },
+      "helpMarkDown": "`check` runs `plotwork sync --check`, `generate` runs `plotwork generate` and keeps a patch as the artifact `plotwork`, and `drift` runs `plotwork generate --check` and publishes a JUnit test run."
+    },
+    {
+      "name": "paths",
+      "type": "multiLine",
+      "label": "Markdown files",
+      "defaultValue": "**/*.md",
+      "required": false,
+      "visibleRule": "mode = check",
+      "helpMarkDown": "One glob, file, or folder per line. `node_modules` and `.git` are never searched."
+    },
+    {
+      "name": "config",
+      "type": "string",
+      "label": "Settings file",
+      "defaultValue": "",
+      "required": false,
+      "helpMarkDown": "The settings file (`plotwork.config.json`). Empty looks for `plotwork.config.json`, then `.plotwork/config.json`, from the working directory up to the repository root."
+    },
+    {
+      "name": "workingDirectory",
+      "type": "string",
+      "label": "Working directory",
+      "defaultValue": ".",
+      "required": false,
+      "helpMarkDown": "The folder to run in, relative to `$(System.DefaultWorkingDirectory)`."
+    },
+    {
+      "name": "since",
+      "type": "string",
+      "label": "Only sources changed since",
+      "defaultValue": "",
+      "required": false,
+      "visibleRule": "mode = drift",
+      "helpMarkDown": "A git ref, such as `origin/main`: only the sources whose files changed since it are checked. Check out with `fetchDepth: 0`."
+    },
+    {
+      "name": "publishTestResults",
+      "type": "boolean",
+      "label": "Publish the JUnit test run",
+      "defaultValue": "true",
+      "required": false,
+      "visibleRule": "mode = drift",
+      "helpMarkDown": "Publish each generated diagram as a test of the run, failed when it drifted."
+    },
+    {
+      "name": "reportDrift",
+      "type": "boolean",
+      "label": "Send the run to the drift dashboard",
+      "defaultValue": "false",
+      "required": false,
+      "groupName": "drift",
+      "helpMarkDown": "Send the run's metadata (the repository, the ref and commit, and per source its name, out path, status, change counts, and owners; never a diagram or a file) to the organisation's drift dashboard. Needs an organisation key. A refusal is a warning and fails nothing."
+    },
+    {
+      "name": "plotworkConnection",
+      "type": "connectedService:plotwork",
+      "label": "Plotwork service connection",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "drift",
+      "visibleRule": "reportDrift = true",
+      "helpMarkDown": "A Plotwork service connection that holds an organisation API key. Without one, the task reads `PLOTWORK_API_KEY`, which a secret variable must be mapped to with `env:`."
+    },
+    {
+      "name": "organization",
+      "type": "string",
+      "label": "Organisation",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "drift",
+      "visibleRule": "reportDrift = true",
+      "helpMarkDown": "The organisation slug to report to. Empty is the organisation of the key."
+    },
+    {
+      "name": "apiUrl",
+      "type": "string",
+      "label": "Plotwork API",
+      "defaultValue": "https://api.plotwork.dev",
+      "required": false,
+      "groupName": "advanced",
+      "helpMarkDown": "The API the drift report is sent to. A service connection's address is used when this is left at the default."
+    },
+    {
+      "name": "cliVersion",
+      "type": "string",
+      "label": "Command line release",
+      "defaultValue": "0.2.0",
+      "required": true,
+      "groupName": "advanced",
+      "helpMarkDown": "The release of `@buun_group/plotwork` the task runs with npx. Pin it, and move it in a change you review."
+    }
+  ],
+  "outputVariables": [
+    { "name": "junitFile", "description": "drift: the JUnit report the task wrote." },
+    { "name": "patchFile", "description": "generate: the patch of the files the run changed, when it changed any." },
+    { "name": "changedFiles", "description": "generate: a JSON array of the files the run changed." },
+    { "name": "driftUrl", "description": "drift with reportDrift: the drift dashboard the run was sent to." }
+  ],
+  "execution": {
+    "Node20_1": {
+      "target": "dist/index.js",
+      "argumentFormat": ""
+    },
+    "Node24": {
+      "target": "dist/index.js",
+      "argumentFormat": ""
+    }
+  }
+}

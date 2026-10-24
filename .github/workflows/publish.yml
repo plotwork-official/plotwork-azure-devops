@@ -1,0 +1,69 @@
+# Publishes the extension to the Visual Studio Marketplace with no stored
+# secret. GitHub's OIDC token signs in to Microsoft Entra through a federated
+# credential on the app registration "Plotwork Marketplace publisher"; Entra
+# gives a short-lived token for Azure DevOps, and tfx publishes with it. That
+# app's service principal is a member of the publisher `plotwork`.
+#
+# Repository variables (Settings, Secrets and variables, Actions, Variables):
+#   AZURE_CLIENT_ID   the app registration's Application (client) ID
+#   AZURE_TENANT_ID   its Directory (tenant) ID
+# Environment: `marketplace`, which the federated credential names.
+#
+# Run it from the Actions tab:
+#   whoami: true                  prints the service principal's Marketplace ID, to add it to the publisher (one time)
+#   share-with: <organisation>    publishes privately, shared with that Azure DevOps organisation, to test
+#   neither                       publishes the version in vss-extension.json as the manifest says (public once "public": true)
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      whoami:
+        description: Only print the service principal's Marketplace ID
+        type: boolean
+        default: false
+      share-with:
+        description: Share a private extension with this Azure DevOps organisation
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: marketplace
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Sign in to Microsoft Entra with GitHub's OIDC token
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - name: Print the service principal's Marketplace ID
+        if: ${{ inputs.whoami }}
+        # 499b84ac-1321-427f-aa17-267ca6975798 is Azure DevOps as an Entra resource.
+        run: |
+          az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query "{id: id, displayName: displayName}" -o table
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: ${{ !inputs.whoami }}
+        with:
+          node-version: 22
+      - name: Publish
+        if: ${{ !inputs.whoami }}
+        env:
+          SHARE_WITH: ${{ inputs.share-with }}
+        run: |
+          token="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)"
+          echo "::add-mask::$token"
+          share=()
+          if [ -n "$SHARE_WITH" ]; then share=(--share-with "$SHARE_WITH"); fi
+          npx --yes tfx-cli@0.24.2 extension publish --root . --manifest-globs vss-extension.json --auth-type pat --token "$token" --no-prompt "${share[@]}"
