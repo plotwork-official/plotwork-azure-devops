@@ -332,18 +332,27 @@ jobs:
           ado() { curl -sS --fail-with-body -H "Authorization: Bearer $token" -H 'Content-Type: application/json' "$@"; }
           new_token
 
-          # An installed extension takes the new version on its own, usually within minutes.
+          # An installed extension takes the new version on its own, usually within minutes. Reading the organisation's
+          # extensions needs the right to manage them, which a Basic user does not have; then the wait is skipped, and the
+          # task version the run logs (checked below) still proves which version ran.
           installed=""
           for attempt in $(seq 1 60); do
             if [ $(( attempt % 10 )) -eq 0 ]; then new_token; fi
-            installed=$(ado "https://extmgmt.dev.azure.com/$ORG/_apis/extensionmanagement/installedextensionsbyname/$PUBLISHER/$EXTENSION_ID?api-version=7.1-preview.1" 2>/dev/null | jq -r '.version // empty' || true)
+            code=$(curl -sS -o "$RUNNER_TEMP/installed.json" -w '%{http_code}' -H "Authorization: Bearer $token" "https://extmgmt.dev.azure.com/$ORG/_apis/extensionmanagement/installedextensionsbyname/$PUBLISHER/$EXTENSION_ID?api-version=7.1-preview.1" || true)
+            if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+              echo "::notice::The service principal may not read the extensions of $ORG (HTTP $code), so the run is queued without waiting for $VERSION."
+              installed="$VERSION"
+              break
+            fi
+            installed=$(jq -r '.version // empty' "$RUNNER_TEMP/installed.json" 2>/dev/null || true)
             if [ "$installed" = "$VERSION" ]; then break; fi
-            echo "$ORG has ${installed:-no install of $EXTENSION_ID}; waiting for $VERSION ($attempt of 60)."
+            if [ "$attempt" -eq 1 ] && [ "$code" != "200" ]; then echo "The extensions of $ORG answered HTTP $code: $(head -c 300 "$RUNNER_TEMP/installed.json")"; fi
+            echo "$ORG has ${installed:-no install of $EXTENSION_ID} (HTTP $code); waiting for $VERSION ($attempt of 60)."
             sleep 30
           done
           if [ "$installed" != "$VERSION" ]; then
             if [ -z "$installed" ]; then
-              echo "::error::$PUBLISHER.$EXTENSION_ID is not installed in $ORG, or the service principal cannot read it. Install it under Organization settings, Extensions, and add the service principal to the organisation."
+              echo "::error::$PUBLISHER.$EXTENSION_ID is not installed in $ORG (HTTP $code). Install it under Organization settings, Extensions, and add the service principal to the organisation."
             else
               echo "::error::$ORG still has $EXTENSION_ID $installed after 30 minutes, not $VERSION."
             fi
