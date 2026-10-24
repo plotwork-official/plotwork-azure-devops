@@ -181,12 +181,16 @@ jobs:
               | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const r=JSON.parse(s.slice(s.indexOf("{")));console.log(r.status==="error"?"error "+(r.message??""):r.status)}catch{console.log("error not published")}})'
           }
           new_token
+          share=()
+          if [ -n "$SHARE_WITH" ]; then share=(--share-with "$SHARE_WITH"); fi
           before="$(status)"
           if [ "$before" = "success" ] || [ "$before" = "pending" ]; then
             echo "The Marketplace already has $EXTENSION_ID $VERSION ($before), so it is not sent again."
+            # A run that stopped before sharing (tfx shares only once its publish returns) shares it now. Sharing twice is harmless.
+            if [ -n "$SHARE_WITH" ]; then
+              npx --yes tfx-cli@0.24.2 extension share --publisher "$PUBLISHER" --extension-id "$EXTENSION_ID" --auth-type pat --token "$token" --no-prompt "${share[@]}"
+            fi
           else
-            share=()
-            if [ -n "$SHARE_WITH" ]; then share=(--share-with "$SHARE_WITH"); fi
             npx --yes tfx-cli@0.24.2 extension publish --vsix "$RUNNER_TEMP/out/$VSIX" --auth-type pat --token "$token" --no-prompt --no-wait-validation "${share[@]}"
           fi
           for attempt in $(seq 1 60); do
