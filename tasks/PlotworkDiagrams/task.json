@@ -1,19 +1,24 @@
 {
   "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
-  "id": "fa60b84c-39d6-45e9-829b-b9876ee4fa10",
-  "name": "PlotworkDiagrams",
-  "friendlyName": "Plotwork diagrams",
+  "id": "5e3e8a8f-f4a6-4640-b81d-abab57ec7356",
+  "name": "PlotworkDiagramsPreview",
+  "friendlyName": "Plotwork diagrams (preview)",
   "description": "Check, generate, and drift-check Plotwork diagrams with the pinned command line.",
   "helpUrl": "https://docs.plotwork.dev/diagrams-in-azure-pipelines",
   "helpMarkDown": "Runs the pinned release of [@buun_group/plotwork](https://www.npmjs.com/package/@buun_group/plotwork) with npx. Needs Node 22 or later on the agent: add `UseNode@1` with `version: 22.x` first. [Guide](https://docs.plotwork.dev/diagrams-in-azure-pipelines)",
   "category": "Utility",
   "author": "Buun Group",
-  "runsOn": ["Agent"],
-  "visibility": ["Build", "Release"],
+  "runsOn": [
+    "Agent"
+  ],
+  "visibility": [
+    "Build",
+    "Release"
+  ],
   "version": {
     "Major": 1,
-    "Minor": 0,
-    "Patch": 0
+    "Minor": 1,
+    "Patch": 1
   },
   "minimumAgentVersion": "3.232.1",
   "instanceNameFormat": "Plotwork diagrams: $(mode)",
@@ -98,7 +103,7 @@
     },
     {
       "name": "plotworkConnection",
-      "type": "connectedService:plotwork",
+      "type": "connectedService:plotwork-preview",
       "label": "Plotwork service connection",
       "defaultValue": "",
       "required": false,
@@ -136,10 +141,22 @@
     }
   ],
   "outputVariables": [
-    { "name": "junitFile", "description": "drift: the JUnit report the task wrote." },
-    { "name": "patchFile", "description": "generate: the patch of the files the run changed, when it changed any." },
-    { "name": "changedFiles", "description": "generate: a JSON array of the files the run changed." },
-    { "name": "driftUrl", "description": "drift with reportDrift: the drift dashboard the run was sent to." }
+    {
+      "name": "junitFile",
+      "description": "drift: the JUnit report the task wrote."
+    },
+    {
+      "name": "patchFile",
+      "description": "generate: the patch of the files the run changed, when it changed any."
+    },
+    {
+      "name": "changedFiles",
+      "description": "generate: a JSON array of the files the run changed."
+    },
+    {
+      "name": "driftUrl",
+      "description": "drift with reportDrift: the drift dashboard the run was sent to."
+    }
   ],
   "execution": {
     "Node20_1": {

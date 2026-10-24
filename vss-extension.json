@@ -1,45 +1,86 @@
 {
   "manifestVersion": 1,
-  "id": "plotwork-diagrams",
+  "id": "plotwork-diagrams-preview",
   "publisher": "plotwork",
-  "version": "0.1.0",
-  "name": "Plotwork diagrams",
+  "version": "0.1.1",
+  "name": "Plotwork diagrams (preview)",
   "description": "Fail a pull request whose diagram pictures are stale, or whose diagrams made from Terraform, OpenAPI, Compose and other files have drifted, with the pinned Plotwork command line.",
   "public": false,
-  "categories": ["Azure Pipelines"],
-  "tags": ["diagrams", "documentation", "architecture", "drift", "markdown", "plotwork"],
-  "targets": [{ "id": "Microsoft.VisualStudio.Services" }],
-  "icons": { "default": "images/logo.png" },
+  "categories": [
+    "Azure Pipelines"
+  ],
+  "tags": [
+    "diagrams",
+    "documentation",
+    "architecture",
+    "drift",
+    "markdown",
+    "plotwork"
+  ],
+  "targets": [
+    {
+      "id": "Microsoft.VisualStudio.Services"
+    }
+  ],
+  "icons": {
+    "default": "images/logo.png"
+  },
   "content": {
-    "details": { "path": "README.md" },
-    "license": { "path": "LICENSE" }
+    "details": {
+      "path": "README.md"
+    },
+    "license": {
+      "path": "LICENSE"
+    }
   },
   "links": {
-    "home": { "uri": "https://plotwork.dev" },
-    "getstarted": { "uri": "https://docs.plotwork.dev/diagrams-in-azure-pipelines" },
-    "support": { "uri": "https://github.com/plotwork-official/plotwork-azure-devops/issues" },
-    "license": { "uri": "https://github.com/plotwork-official/plotwork-azure-devops/blob/main/LICENSE" }
+    "home": {
+      "uri": "https://plotwork.dev"
+    },
+    "getstarted": {
+      "uri": "https://docs.plotwork.dev/diagrams-in-azure-pipelines"
+    },
+    "support": {
+      "uri": "https://github.com/plotwork-official/plotwork-azure-devops/issues"
+    },
+    "license": {
+      "uri": "https://github.com/plotwork-official/plotwork-azure-devops/blob/main/LICENSE"
+    }
   },
-  "repository": { "type": "git", "uri": "https://github.com/plotwork-official/plotwork-azure-devops" },
+  "repository": {
+    "type": "git",
+    "uri": "https://github.com/plotwork-official/plotwork-azure-devops"
+  },
   "files": [
-    { "path": "tasks/PlotworkDiagrams" },
-    { "path": "images", "addressable": true }
+    {
+      "path": "tasks/PlotworkDiagrams"
+    },
+    {
+      "path": "images",
+      "addressable": true
+    }
   ],
   "contributions": [
     {
       "id": "plotwork-diagrams-task",
       "type": "ms.vss-distributed-task.task",
-      "targets": ["ms.vss-distributed-task.tasks"],
-      "properties": { "name": "tasks/PlotworkDiagrams" }
+      "targets": [
+        "ms.vss-distributed-task.tasks"
+      ],
+      "properties": {
+        "name": "tasks/PlotworkDiagrams"
+      }
     },
     {
       "id": "plotwork-service-endpoint",
       "description": "An organisation API key for Plotwork, used to send drift runs to the organisation's dashboard.",
       "type": "ms.vss-endpoint.service-endpoint-type",
-      "targets": ["ms.vss-endpoint.endpoint-types"],
+      "targets": [
+        "ms.vss-endpoint.endpoint-types"
+      ],
       "properties": {
-        "name": "plotwork",
-        "displayName": "Plotwork",
+        "name": "plotwork-preview",
+        "displayName": "Plotwork (preview)",
         "url": {
           "displayName": "API address",
           "value": "https://api.plotwork.dev",
@@ -55,7 +96,10 @@
                 "description": "An organisation key made in the Plotwork portal, under the organisation's API keys.",
                 "inputMode": "passwordbox",
                 "isConfidential": true,
-                "validation": { "isRequired": true, "dataType": "string" }
+                "validation": {
+                  "isRequired": true,
+                  "dataType": "string"
+                }
               }
             ]
           }

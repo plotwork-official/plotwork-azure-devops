@@ -1,21 +1,36 @@
-# Publishes the extension to the Visual Studio Marketplace with no stored
-# secret. GitHub's OIDC token signs in to Microsoft Entra through a federated
-# credential on the app registration "Plotwork Marketplace publisher"; Entra
-# gives a short-lived token for Azure DevOps, and tfx publishes with it. That
-# app's service principal is a member of the publisher `plotwork`.
+# Publishes the extension to the Visual Studio Marketplace with no stored secret, and attaches the .vsix to a GitHub Release.
+# This file is written by the Plotwork monorepo's build (apps/azure-devops/repo/.github/workflows/publish.yml there); a change
+# made here is overwritten by the next release.
+#
+# GitHub's OIDC token signs in to Microsoft Entra through a federated credential on the app registration "Plotwork Marketplace
+# publisher"; Entra gives a short-lived token for Azure DevOps, and tfx publishes with it. That app's service principal is a
+# member of the publisher `plotwork`.
+#
+# A push of a tag v<version>, which the monorepo's release workflow makes after it mirrors the built tree, publishes on its own:
+#
+#   tag              extension in the tree                Marketplace
+#   v0.2.0           plotwork-diagrams                     public or private, as vss-extension.json says; a private one is
+#                                                          shared with AZURE_DEVOPS_SHARE_WITH when that is set
+#   v0.2.0-beta.3    plotwork-diagrams-preview, 0.2.3      private, "public": false forced, shared with AZURE_DEVOPS_SHARE_WITH
+#
+# then creates the GitHub Release of the tag (a prerelease for a beta) with the .vsix it published, and signs a build provenance
+# attestation for that .vsix.
 #
 # Repository variables (Settings, Secrets and variables, Actions, Variables):
-#   AZURE_CLIENT_ID   the app registration's Application (client) ID
-#   AZURE_TENANT_ID   its Directory (tenant) ID
-# Environment: `marketplace`, which the federated credential names.
+#   AZURE_CLIENT_ID           the app registration's Application (client) ID
+#   AZURE_TENANT_ID           its Directory (tenant) ID
+#   AZURE_DEVOPS_SHARE_WITH   the Azure DevOps organisation the preview extension is shared with, such as plotwork-test
+# Environment: `marketplace`, which the federated credential names. Its deployment rules must allow the tags v*.
 #
-# Run it from the Actions tab:
+# Run it from the Actions tab, for the manual cases:
 #   whoami: true                  prints the service principal's Marketplace ID, to add it to the publisher (one time)
-#   share-with: <organisation>    publishes privately, shared with that Azure DevOps organisation, to test
-#   neither                       publishes the version in vss-extension.json as the manifest says (public once "public": true)
+#   share-with: <organisation>    publishes the default branch privately, shared with that Azure DevOps organisation
+#   neither                       publishes the default branch as the manifest says
 name: Publish
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       whoami:
@@ -27,43 +42,173 @@ on:
         type: string
         default: ""
 
-permissions:
-  contents: read
+permissions: {}
+
+# One publish at a time, and a publish in flight is never cancelled: the Marketplace refuses a version twice.
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
   publish:
+    name: Publish to the Marketplace
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: marketplace
     permissions:
       contents: read
-      id-token: write
+      id-token: write # the OIDC token Microsoft Entra signs in with
+    outputs:
+      vsix: ${{ steps.plan.outputs.vsix }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      # On a tag, the manifest must be the one the monorepo built for that version: the preview extension, private, at the
+      # numeric version of a beta (patch * 1000 + N), or the stable extension at the version itself. Anything else stops here,
+      # before the sign-in.
+      - name: Decide what to publish
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          WHOAMI: ${{ inputs.whoami }}
+          SHARE_INPUT: ${{ inputs.share-with }}
+          SHARE_VAR: ${{ vars.AZURE_DEVOPS_SHARE_WITH }}
+        run: |
+          set -euo pipefail
+          id=$(node -p "require('./vss-extension.json').id")
+          publisher=$(node -p "require('./vss-extension.json').publisher")
+          version=$(node -p "require('./vss-extension.json').version")
+          public=$(node -p "Boolean(require('./vss-extension.json').public)")
+          prerelease=false
+          share=""
+          override=""
+          if [ "$REF_TYPE" = "tag" ]; then
+            tagged="${REF_NAME#v}"
+            if [[ "$tagged" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)-beta\.([1-9][0-9]*)$ ]]; then
+              prerelease=true
+              expected="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$(( BASH_REMATCH[3] * 1000 + BASH_REMATCH[4] ))"
+              case "$id" in *-preview) ;; *) echo "::error::$REF_NAME is a beta, but vss-extension.json is the extension $id, not a preview one."; exit 1 ;; esac
+              if [ "$public" != "false" ]; then echo "::error::$REF_NAME is a beta, and its manifest is public. A beta is never public."; exit 1; fi
+              if [ -z "$SHARE_VAR" ]; then echo "::error::Set the repository variable AZURE_DEVOPS_SHARE_WITH to the Azure DevOps organisation that tests betas."; exit 1; fi
+              share="$SHARE_VAR"
+              override='{"public": false}'
+            elif [[ "$tagged" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              expected="$tagged"
+              case "$id" in *-preview) echo "::error::$REF_NAME is a stable version, but vss-extension.json is the preview extension $id."; exit 1 ;; esac
+              if [ "$public" = "false" ]; then share="$SHARE_VAR"; fi
+            else
+              echo "::error::$REF_NAME is not a release tag such as v0.2.0 or v0.2.0-beta.3."
+              exit 1
+            fi
+            if [ "$version" != "$expected" ]; then
+              echo "::error::$REF_NAME should publish version $expected, and vss-extension.json has $version."
+              exit 1
+            fi
+          elif [ "$EVENT" = "workflow_dispatch" ] && [ "$WHOAMI" != "true" ]; then
+            share="$SHARE_INPUT"
+          fi
+          {
+            echo "prerelease=$prerelease"
+            echo "share=$share"
+            echo "override=$override"
+            echo "vsix=$publisher.$id-$version.vsix"
+          } >> "$GITHUB_OUTPUT"
+          echo "Publishing $publisher.$id $version (public in the manifest: $public; shared with: ${share:-nobody})." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Sign in to Microsoft Entra with GitHub's OIDC token
         uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
+
       - name: Print the service principal's Marketplace ID
-        if: ${{ inputs.whoami }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.whoami }}
         # 499b84ac-1321-427f-aa17-267ca6975798 is Azure DevOps as an Entra resource.
         run: |
           az rest -u "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1" --resource 499b84ac-1321-427f-aa17-267ca6975798 -o json
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: ${{ !inputs.whoami }}
-        with:
-          node-version: 22
-      - name: Publish
-        if: ${{ !inputs.whoami }}
+
+      # Packed once, so the file published is the file attached to the release.
+      - name: Pack and publish
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.whoami) }}
         env:
-          SHARE_WITH: ${{ inputs.share-with }}
+          SHARE_WITH: ${{ steps.plan.outputs.share }}
+          OVERRIDE: ${{ steps.plan.outputs.override }}
+          VSIX: ${{ steps.plan.outputs.vsix }}
         run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          override=()
+          if [ -n "$OVERRIDE" ]; then override=(--override "$OVERRIDE"); fi
+          npx --yes tfx-cli@0.24.2 extension create --root . --manifest-globs vss-extension.json --output-path "$RUNNER_TEMP/out/$VSIX" --no-prompt "${override[@]}"
           token="$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)"
           echo "::add-mask::$token"
           share=()
           if [ -n "$SHARE_WITH" ]; then share=(--share-with "$SHARE_WITH"); fi
-          npx --yes tfx-cli@0.24.2 extension publish --root . --manifest-globs vss-extension.json --auth-type pat --token "$token" --no-prompt "${share[@]}"
+          npx --yes tfx-cli@0.24.2 extension publish --vsix "$RUNNER_TEMP/out/$VSIX" --auth-type pat --token "$token" --no-prompt "${share[@]}"
+          echo "Published $VSIX." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: ${{ github.ref_type == 'tag' }}
+        with:
+          name: vsix
+          path: ${{ runner.temp }}/out/${{ steps.plan.outputs.vsix }}
+          if-no-files-found: error
+          retention-days: 14
+
+  # The GitHub Release of the tag, with the .vsix the Marketplace got and a signed build provenance for it. Only this job can
+  # write to the repository. Check a downloaded .vsix with:
+  #   gh attestation verify plotwork.plotwork-diagrams-<version>.vsix --repo plotwork-official/plotwork-azure-devops
+  release:
+    name: Attach the .vsix to the GitHub Release
+    needs: publish
+    if: ${{ github.ref_type == 'tag' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # creating the release of the tag
+      actions: read # downloading the artifact of this run
+      id-token: write # signing the provenance with Sigstore
+      attestations: write # storing the attestation
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VSIX: ${{ needs.publish.outputs.vsix }}
+      PRERELEASE: ${{ needs.publish.outputs.prerelease }}
+    steps:
+      - name: Fetch the published .vsix
+        run: |
+          set -euo pipefail
+          gh run download "$GITHUB_RUN_ID" --name vsix --dir out
+          test -s "out/$VSIX"
+
+      - name: Sign the provenance of the .vsix
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/${{ needs.publish.outputs.vsix }}
+
+      - name: Create the release
+        run: |
+          set -euo pipefail
+          flags=()
+          notes="The extension as published to the Visual Studio Marketplace."
+          if [ "$PRERELEASE" = "true" ]; then
+            flags=(--prerelease)
+            notes="A beta, published as the private preview extension. The extension as published to the Visual Studio Marketplace."
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "out/$VSIX" --clobber
+          else
+            gh release create "$TAG" "out/$VSIX" --verify-tag --title "$TAG" --notes "$notes" "${flags[@]}"
+          fi
+          echo "Attached $VSIX to the release $TAG." >> "$GITHUB_STEP_SUMMARY"

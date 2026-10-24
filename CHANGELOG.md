@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to this extension are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow [semantic versioning](https://semver.org/spec/v2.0.0.html). The extension's version is in `vss-extension.json`; the task's major version, `PlotworkDiagrams@1`, moves only with a change that breaks a pipeline.
+All notable changes to this extension are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow [semantic versioning](https://semver.org/spec/v2.0.0.html). Betas (`0.2.0-beta.3`) are published as the private preview extension under the Marketplace version `0.2.3`; stable versions as they are. The task's major version, `PlotworkDiagrams@1`, moves only with a change that breaks a pipeline; its minor and patch rise with every release.
 
-## 0.1.0 (unreleased)
+## 0.1.0-beta.1
 
 ### Added
 

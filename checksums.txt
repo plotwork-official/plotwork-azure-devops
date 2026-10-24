@@ -1,0 +1,11 @@
+fc3dd048393e46ecc2c63146c98e1726f5c885661409fd476d7a6ab004e1c27d  ./.github/workflows/publish.yml
+88fbe0ba94d8db85ee0ac9810b3582831ad43e3f325622aa339ba6498303619e  ./.gitignore
+8dd969caee3692ed30cc0c63f9275219d3f8e558d9defe18a503ae43c1a5ccff  ./CHANGELOG.md
+4d6ded72099189d2c48182428e6d3255f089074fd1fd479a40c0465346c68766  ./LICENSE
+deb451d17dae42ad41a58a2ad249f0ac418091f83db67e2c1385fc5c433c6577  ./README.md
+817bb235fdd50d16ed2557b3aa41eba9c66c2eccba9ebfde9290bae4a6bc485b  ./images/logo.png
+d33bf9b14a26917524ccd4775e29ac30994a712aaf40270162baa2599fec8f6a  ./tasks/PlotworkDiagrams/dist/THIRD-PARTY-NOTICES.md
+fc90937b3c7044a8b7b1d2e76b263621aab14dfa2d2046917e1f4924cc26e4ec  ./tasks/PlotworkDiagrams/dist/index.js
+6939d041f4d91582fc5cc9d57e4ca2193218f052e9931db4c3409eb0cd024180  ./tasks/PlotworkDiagrams/icon.png
+ecdeb76c8524ebd426c8f4c89e4a7837befad98e4eee94927de846cc32f452e7  ./tasks/PlotworkDiagrams/task.json
+091bd6d9ebb122398f8ae483dcbf7613ffb986928c355224ce83a7ac02ae687d  ./vss-extension.json

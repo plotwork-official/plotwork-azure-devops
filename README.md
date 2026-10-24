@@ -1,6 +1,8 @@
+> The preview of [Plotwork diagrams](https://marketplace.visualstudio.com/items?itemName=plotwork.plotwork-diagrams), version 0.1.0-beta.1: a private extension (`plotwork-diagrams-preview`) shared with test organisations. Its task is `PlotworkDiagramsPreview@1`.
+
 # Plotwork diagrams for Azure Pipelines
 
-Keeps [Plotwork](https://plotwork.dev) diagrams in step in Azure Pipelines. The task `PlotworkDiagrams@1` fails a pull request whose diagram pictures are stale, or whose diagrams made from Terraform, OpenAPI, Compose and other files have drifted, and can write them again. It runs the pinned release of the command line [`@buun_group/plotwork`](https://www.npmjs.com/package/@buun_group/plotwork) with `npx`, so it is the same check you run on your machine.
+Keeps [Plotwork](https://plotwork.dev) diagrams in step in Azure Pipelines. The task `PlotworkDiagramsPreview@1` fails a pull request whose diagram pictures are stale, or whose diagrams made from Terraform, OpenAPI, Compose and other files have drifted, and can write them again. It runs the pinned release of the command line [`@buun_group/plotwork`](https://www.npmjs.com/package/@buun_group/plotwork) with `npx`, so it is the same check you run on your machine.
 
 ## TL;DR
 
@@ -26,7 +28,7 @@ steps:
   - task: UseNode@1
     inputs:
       version: 22.x
-  - task: PlotworkDiagrams@1
+  - task: PlotworkDiagramsPreview@1
     inputs:
       mode: check
       paths: |
@@ -43,7 +45,7 @@ steps:
   - task: UseNode@1
     inputs:
       version: 22.x
-  - task: PlotworkDiagrams@1
+  - task: PlotworkDiagramsPreview@1
     inputs:
       mode: drift
 ```
@@ -51,7 +53,7 @@ steps:
 Each generated diagram is a test of the run, failed when it drifted. To send each run to your organisation's drift dashboard, create a Plotwork service connection (Project settings, Service connections, New, Plotwork) with an organisation API key, and:
 
 ```yaml
-  - task: PlotworkDiagrams@1
+  - task: PlotworkDiagramsPreview@1
     inputs:
       mode: drift
       reportDrift: true
@@ -63,7 +65,7 @@ Each generated diagram is a test of the run, failed when it drifted. To send eac
 Or keep the key in a secret variable and map it into the step:
 
 ```yaml
-  - task: PlotworkDiagrams@1
+  - task: PlotworkDiagramsPreview@1
     inputs:
       mode: drift
       reportDrift: true
@@ -74,7 +76,7 @@ Or keep the key in a secret variable and map it into the step:
 ## Write the diagrams again
 
 ```yaml
-  - task: PlotworkDiagrams@1
+  - task: PlotworkDiagramsPreview@1
     inputs:
       mode: generate
 ```
