@@ -2,7 +2,7 @@
   "manifestVersion": 1,
   "id": "plotwork-diagrams-preview",
   "publisher": "plotwork",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "name": "Plotwork diagrams (preview)",
   "description": "Fail a pull request whose diagram pictures are stale, or whose diagrams made from Terraform, OpenAPI, Compose and other files have drifted, with the pinned Plotwork command line.",
   "public": false,

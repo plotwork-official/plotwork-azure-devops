@@ -1,4 +1,4 @@
-> The preview of [Plotwork diagrams](https://marketplace.visualstudio.com/items?itemName=plotwork.plotwork-diagrams), version 0.1.0-beta.1: a private extension (`plotwork-diagrams-preview`) shared with test organisations. Its task is `PlotworkDiagramsPreview@1`.
+> The preview of [Plotwork diagrams](https://marketplace.visualstudio.com/items?itemName=plotwork.plotwork-diagrams), version 0.1.0-beta.2: a private extension (`plotwork-diagrams-preview`) shared with test organisations. Its task is `PlotworkDiagramsPreview@1`.
 
 # Plotwork diagrams for Azure Pipelines
 
