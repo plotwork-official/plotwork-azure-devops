@@ -3,7 +3,7 @@
   "id": "5e3e8a8f-f4a6-4640-b81d-abab57ec7356",
   "name": "PlotworkDiagramsPreview",
   "friendlyName": "Plotwork diagrams (preview)",
-  "description": "Check, generate, and drift-check Plotwork diagrams with the pinned command line.",
+  "description": "Check, sync, validate, render, generate, and drift-check Plotwork diagrams with the pinned command line.",
   "helpUrl": "https://docs.plotwork.dev/diagrams-in-azure-pipelines",
   "helpMarkDown": "Runs the pinned release of [@buun_group/plotwork](https://www.npmjs.com/package/@buun_group/plotwork) with npx. Needs Node 22 or later on the agent: add `UseNode@1` with `version: 22.x` first. [Guide](https://docs.plotwork.dev/diagrams-in-azure-pipelines)",
   "category": "Utility",
@@ -18,16 +18,22 @@
   "version": {
     "Major": 1,
     "Minor": 1,
-    "Patch": 2
+    "Patch": 3
   },
   "minimumAgentVersion": "3.232.1",
   "instanceNameFormat": "Plotwork diagrams: $(mode)",
   "groups": [
     {
-      "name": "drift",
-      "displayName": "Drift dashboard",
+      "name": "generate",
+      "displayName": "Pull request",
+      "isExpanded": true,
+      "visibleRule": "mode = generate"
+    },
+    {
+      "name": "plotwork",
+      "displayName": "Plotwork organisation",
       "isExpanded": false,
-      "visibleRule": "mode = drift"
+      "visibleRule": "mode = drift || mode = generate || mode = check || mode = validate"
     },
     {
       "name": "advanced",
@@ -43,11 +49,14 @@
       "defaultValue": "check",
       "required": true,
       "options": {
-        "check": "check: fail on a stale picture under a diagram fence",
+        "check": "check: fail on a stale picture or a diagram with an error",
+        "validate": "validate: report errors and warnings, draw nothing",
+        "sync": "sync: redraw the stale pictures in the workspace",
+        "render": "render: draw each .diagram file to SVG in outDir",
         "generate": "generate: write the diagrams made from files again",
         "drift": "drift: fail when a diagram made from files has drifted"
       },
-      "helpMarkDown": "`check` runs `plotwork sync --check`, `generate` runs `plotwork generate` and keeps a patch as the artifact `plotwork`, and `drift` runs `plotwork generate --check` and publishes a JUnit test run."
+      "helpMarkDown": "`check` runs `plotwork sync --check` on the Markdown and `plotwork validate` on each `.diagram` file. `validate` reports errors and warnings. `sync` redraws pictures and commits nothing. `render` draws each `.diagram` file light and dark. `generate` writes the diagrams made from files again and opens a pull request on Azure Repos. `drift` runs `plotwork generate --check` and publishes a JUnit test run."
     },
     {
       "name": "paths",
@@ -55,24 +64,48 @@
       "label": "Markdown files",
       "defaultValue": "**/*.md",
       "required": false,
-      "visibleRule": "mode = check",
-      "helpMarkDown": "One glob, file, or folder per line. `node_modules` and `.git` are never searched."
+      "visibleRule": "mode = check || mode = validate || mode = sync",
+      "helpMarkDown": "One glob, file, or folder per line, from the working directory. A line that starts with `!` leaves out what it matches. `node_modules` and `.git` are never searched."
     },
     {
-      "name": "config",
-      "type": "string",
-      "label": "Settings file",
-      "defaultValue": "",
+      "name": "diagrams",
+      "type": "multiLine",
+      "label": ".diagram files",
+      "defaultValue": "**/*.diagram",
       "required": false,
-      "helpMarkDown": "The settings file (`plotwork.config.json`). Empty looks for `plotwork.config.json`, then `.plotwork/config.json`, from the working directory up to the repository root."
+      "visibleRule": "mode = check || mode = validate || mode = render",
+      "helpMarkDown": "Standalone `.diagram` files: one glob, file, or folder per line. `check` and `validate` report their errors, and `render` draws them. Empty means none."
     },
     {
-      "name": "workingDirectory",
+      "name": "outDir",
       "type": "string",
-      "label": "Working directory",
-      "defaultValue": ".",
+      "label": "SVG folder",
+      "defaultValue": "plotwork-svg",
       "required": false,
-      "helpMarkDown": "The folder to run in, relative to `$(System.DefaultWorkingDirectory)`."
+      "visibleRule": "mode = render",
+      "helpMarkDown": "The folder `render` writes to, from the working directory. Each file keeps its folder: `docs/flow.diagram` becomes `<outDir>/docs/flow.svg` and `flow.dark.svg`."
+    },
+    {
+      "name": "failOn",
+      "type": "pickList",
+      "label": "Fail on",
+      "defaultValue": "error",
+      "required": false,
+      "options": {
+        "error": "error: errors, and stale or drifted diagrams in check and drift",
+        "warning": "warning: warnings as well",
+        "never": "never: report only"
+      },
+      "helpMarkDown": "Which problems fail the step. Every problem is marked on its line either way."
+    },
+    {
+      "name": "convertMermaid",
+      "type": "boolean",
+      "label": "Convert Mermaid",
+      "defaultValue": "false",
+      "required": false,
+      "visibleRule": "mode = check || mode = sync",
+      "helpMarkDown": "Treat each `mermaid` fence that converts to Plotwork as a diagram: `check` reports it as stale, and `sync` replaces it with a `diagram` fence and draws it."
     },
     {
       "name": "since",
@@ -80,8 +113,8 @@
       "label": "Only sources changed since",
       "defaultValue": "",
       "required": false,
-      "visibleRule": "mode = drift",
-      "helpMarkDown": "A git ref, such as `origin/main`: only the sources whose files changed since it are checked. Check out with `fetchDepth: 0`."
+      "visibleRule": "mode = drift || mode = generate",
+      "helpMarkDown": "A git ref, such as `origin/main`: only the sources whose files changed since it run. Check out with `fetchDepth: 0`."
     },
     {
       "name": "publishTestResults",
@@ -93,13 +126,90 @@
       "helpMarkDown": "Publish each generated diagram as a test of the run, failed when it drifted."
     },
     {
+      "name": "onDrift",
+      "type": "pickList",
+      "label": "When diagrams drifted",
+      "defaultValue": "pr",
+      "required": false,
+      "groupName": "generate",
+      "options": {
+        "pr": "pr: open or update one pull request on Azure Repos",
+        "commit": "commit: commit to the branch the run is on",
+        "fail": "fail: fail the step, keep the files and the patch",
+        "patch": "patch: keep the files and the patch, and pass"
+      },
+      "helpMarkDown": "`pr` and `commit` push with the job's access token and need Azure Repos: grant the project's build service Contribute, Create branch, and Contribute to pull requests on the repository. In any other repository the task keeps the patch and says why. The patch is always the artifact `plotwork`."
+    },
+    {
+      "name": "prBranch",
+      "type": "string",
+      "label": "Pull request branch",
+      "defaultValue": "plotwork/diagrams",
+      "required": false,
+      "groupName": "generate",
+      "visibleRule": "onDrift = pr",
+      "helpMarkDown": "The branch the new diagrams are pushed to. The task owns it: each run replaces it with one commit on top of the branch the run is on, and never replaces a branch whose last commit is not Plotwork's."
+    },
+    {
+      "name": "prTitle",
+      "type": "string",
+      "label": "Pull request title",
+      "defaultValue": "docs: regenerate diagrams from their sources",
+      "required": false,
+      "groupName": "generate",
+      "visibleRule": "onDrift = pr",
+      "helpMarkDown": "The title of the pull request."
+    },
+    {
+      "name": "commitMessage",
+      "type": "string",
+      "label": "Commit message",
+      "defaultValue": "docs: regenerate diagrams from their sources",
+      "required": false,
+      "groupName": "generate",
+      "visibleRule": "onDrift = pr || onDrift = commit",
+      "helpMarkDown": "The message of the commit. The task adds the trailer `Plotwork-Generated: true`, by which it knows its own commits."
+    },
+    {
+      "name": "publish",
+      "type": "boolean",
+      "label": "Publish sources with a publish section",
+      "defaultValue": "false",
+      "required": false,
+      "groupName": "generate",
+      "helpMarkDown": "Publish each source of the settings that has a `publish` section to Plotwork, with the key of the service connection or `PLOTWORK_API_KEY`, or with no key as a trusted publisher. Only the generated diagram source is sent, never the files it was made from."
+    },
+    {
+      "name": "comment",
+      "type": "pickList",
+      "label": "Pull request comment",
+      "defaultValue": "auto",
+      "required": false,
+      "visibleRule": "mode = drift || mode = generate",
+      "options": {
+        "auto": "auto: when a diagram drifted or has an error",
+        "always": "always: on every pull request build",
+        "never": "never"
+      },
+      "helpMarkDown": "On a pull request build in Azure Repos, write one comment with the change table and how to fix it, and edit that same comment on later runs. Needs Contribute to pull requests for the build service."
+    },
+    {
+      "name": "rulesOrg",
+      "type": "string",
+      "label": "Style rules of an organisation",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "plotwork",
+      "helpMarkDown": "`check` and `validate`: an organisation id or slug whose saved style rules to apply instead of the rules of the settings file, read with the key or as a trusted publisher."
+    },
+    {
       "name": "reportDrift",
       "type": "boolean",
       "label": "Send the run to the drift dashboard",
       "defaultValue": "false",
       "required": false,
-      "groupName": "drift",
-      "helpMarkDown": "Send the run's metadata (the repository, the ref and commit, and per source its name, out path, status, change counts, and owners; never a diagram or a file) to the organisation's drift dashboard. Needs an organisation key. A refusal is a warning and fails nothing."
+      "groupName": "plotwork",
+      "helpMarkDown": "`drift` and `generate`: send the run's metadata (the repository, the ref and commit, and per source its name, out path, status, change counts, and owners; never a diagram or a file) to the organisation's drift dashboard. A refusal is a note and fails nothing."
     },
     {
       "name": "plotworkConnection",
@@ -107,9 +217,8 @@
       "label": "Plotwork service connection",
       "defaultValue": "",
       "required": false,
-      "groupName": "drift",
-      "visibleRule": "reportDrift = true",
-      "helpMarkDown": "A Plotwork service connection that holds an organisation API key. Without one, the task reads `PLOTWORK_API_KEY`, which a secret variable must be mapped to with `env:`."
+      "groupName": "plotwork",
+      "helpMarkDown": "A Plotwork service connection that holds an organisation API key. Without one, the task reads `PLOTWORK_API_KEY`, which a secret variable must be mapped to with `env:`; with neither, it signs in as a trusted publisher with the job's ID token."
     },
     {
       "name": "organization",
@@ -117,9 +226,35 @@
       "label": "Organisation",
       "defaultValue": "",
       "required": false,
-      "groupName": "drift",
-      "visibleRule": "reportDrift = true",
-      "helpMarkDown": "The organisation slug to report to. Empty is the organisation of the key."
+      "groupName": "plotwork",
+      "helpMarkDown": "The organisation slug the drift report goes to and a trusted publisher signs in to. Empty is `rulesOrg`, then `brand.organization` of the settings, then the organisation of the key."
+    },
+    {
+      "name": "config",
+      "type": "string",
+      "label": "Settings file",
+      "defaultValue": "",
+      "required": false,
+      "groupName": "advanced",
+      "helpMarkDown": "The settings file (`plotwork.config.json`). Empty looks for `plotwork.config.json`, then `.plotwork/config.json`, from the working directory up to the repository root."
+    },
+    {
+      "name": "workingDirectory",
+      "type": "string",
+      "label": "Working directory",
+      "defaultValue": ".",
+      "required": false,
+      "groupName": "advanced",
+      "helpMarkDown": "The folder to run in, relative to `$(System.DefaultWorkingDirectory)`. Issues and outputs name paths from the repository root."
+    },
+    {
+      "name": "summary",
+      "type": "boolean",
+      "label": "Write the run summary",
+      "defaultValue": "true",
+      "required": false,
+      "groupName": "advanced",
+      "helpMarkDown": "Add a Plotwork tab to the run's summary: a table of files, their status, and how to fix each problem."
     },
     {
       "name": "apiUrl",
@@ -128,7 +263,7 @@
       "defaultValue": "https://api.plotwork.dev",
       "required": false,
       "groupName": "advanced",
-      "helpMarkDown": "The API the drift report is sent to. A service connection's address is used when this is left at the default."
+      "helpMarkDown": "The API the task calls. A service connection's address is used when this is left at the default."
     },
     {
       "name": "cliVersion",
@@ -142,6 +277,46 @@
   ],
   "outputVariables": [
     {
+      "name": "stale",
+      "description": "The diagrams whose picture was missing or out of date (check), redrawn (sync), or drifted from their files (drift, generate)."
+    },
+    {
+      "name": "errors",
+      "description": "The number of errors found."
+    },
+    {
+      "name": "warnings",
+      "description": "The number of warnings found."
+    },
+    {
+      "name": "files",
+      "description": "A JSON array of paths from the repository root: the files to sync (check), the files with an error (validate), or the files written (sync, render, generate)."
+    },
+    {
+      "name": "changes",
+      "description": "drift and generate: a JSON array with one entry per drifted diagram: its source, its out file, the number of changes, and one sentence naming them."
+    },
+    {
+      "name": "pullRequest",
+      "description": "generate with onDrift pr: the pull request it opened or updated, or empty."
+    },
+    {
+      "name": "published",
+      "description": "generate with publish: a JSON array of what was published, each with its source name and link."
+    },
+    {
+      "name": "commentUrl",
+      "description": "drift and generate on a pull request build: the comment it wrote or edited, or empty."
+    },
+    {
+      "name": "driftUrl",
+      "description": "reportDrift: the drift dashboard the run was sent to."
+    },
+    {
+      "name": "signedInAs",
+      "description": "A JSON object with the organisation and trusted publisher a run with no key signed in as, or empty."
+    },
+    {
       "name": "junitFile",
       "description": "drift: the JUnit report the task wrote."
     },
@@ -152,10 +327,6 @@
     {
       "name": "changedFiles",
       "description": "generate: a JSON array of the files the run changed."
-    },
-    {
-      "name": "driftUrl",
-      "description": "drift with reportDrift: the drift dashboard the run was sent to."
     }
   ],
   "execution": {

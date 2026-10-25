@@ -32,7 +32,15 @@
 # AZURE_DEVOPS_SHARE_WITH, its project AZURE_DEVOPS_SMOKE_PROJECT, and the pipeline AZURE_DEVOPS_SMOKE_PIPELINE (its numeric id),
 # made from .azure-pipelines/plotwork-smoke.yml of plotwork-official/plotwork-examples. It signs in as the publish does, so the
 # service principal must also be a user of that organisation, in the project's Contributors. Without the three variables it says
-# so and passes.
+# so and passes. .github/scripts/smoke-check.sh reads the run's timeline: every mode ran and passed but the step that must fail,
+# the known-bad diagram's issue names its file and line, each step attached its summary, and the output variables were right.
+#
+# With AZURE_DEVOPS_SMOKE_WRITE_REPO set to an Azure Repos repository's name in that project, .github/scripts/smoke-write.sh then
+# tests generate in write mode there: it pushes plotwork-examples with a made-up drift, runs the pipeline plotwork-smoke-write
+# (made from .azure-pipelines/plotwork-smoke-write.yml, created if missing), checks the pull request it opened, pushes the
+# examples back, and checks the task abandoned it and deleted its branch. With AZURE_DEVOPS_SMOKE_PLOTWORK_ORG set to a Plotwork
+# organisation (on the preview API) that trusts that pipeline, both runs also report drift and publish with no key. Neither
+# variable set: the write half says so and passes. No secret is used: the service principal signs in with GitHub's OIDC token.
 name: Publish
 
 on:
@@ -263,14 +271,14 @@ jobs:
           echo "Attached $VSIX to the release $TAG." >> "$GITHUB_STEP_SUMMARY"
 
   # The extension in a real pipeline: waits until the organisation has the version this run published, queues the smoke
-  # pipeline with the latest stable command line, and passes when every Plotwork step of the run passed on the task version
-  # this release wrote.
+  # pipeline with the latest stable command line, and passes when every mode did what it should on the task version this
+  # release wrote; then, when a repository is named, runs generate in write mode on Azure Repos.
   smoke:
     name: Run the extension in Azure Pipelines
     needs: publish
     if: ${{ !cancelled() && ((github.ref_type == 'tag' && needs.publish.result == 'success') || (github.event_name == 'workflow_dispatch' && inputs.smoke)) }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     environment: marketplace
     permissions:
       contents: read
@@ -375,13 +383,30 @@ jobs:
           done
           if [ "$state" != "completed" ]; then echo "::error::Run $id had not finished after 20 minutes: $link"; exit 1; fi
 
-          timeline=$(ado "https://dev.azure.com/$ORG/$PROJECT/_apis/build/builds/$id/timeline?api-version=7.1")
-          steps=$(jq -c --arg task "$TASK" '[.records[] | select(.type == "Task" and .task.name == $task) | {name, result, version: .task.version}]' <<<"$timeline")
-          echo "$steps" | jq -r '.[] | "\(.name): \(.result), task \(.version)"'
-          count=$(jq 'length' <<<"$steps")
-          if [ "$count" -lt 2 ]; then echo "::error::Run $id has $count $TASK steps, not 2: $link"; exit 1; fi
-          wrong=$(jq -r --arg v "$TASK_VERSION" '[.[] | select(.version != $v)] | length' <<<"$steps")
-          if [ "$wrong" -ne 0 ]; then echo "::error::Run $id ran $TASK at another version than $TASK_VERSION: $link"; exit 1; fi
-          failed=$(jq -r '[.[] | select(.result != "succeeded")] | length' <<<"$steps")
-          if [ "$failed" -ne 0 ]; then echo "::error::A Plotwork step of run $id failed: $link"; exit 1; fi
+          # The timeline (each step's result, task version, and issues) and the summaries the Plotwork steps attached.
+          ado "https://dev.azure.com/$ORG/$PROJECT/_apis/build/builds/$id/timeline?api-version=7.1" > "$RUNNER_TEMP/timeline.json"
+          ado "https://dev.azure.com/$ORG/$PROJECT/_apis/build/builds/$id/attachments/Distributedtask.Core.Summary?api-version=7.1" > "$RUNNER_TEMP/summaries.json"
+          if ! bash .github/scripts/smoke-check.sh "$RUNNER_TEMP/timeline.json" "$RUNNER_TEMP/summaries.json"; then
+            echo "::error::The smoke pipeline failed: $link"
+            exit 1
+          fi
           echo "The smoke pipeline passed with $TASK $TASK_VERSION and @buun_group/plotwork@$CLI: $link" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run the write smoke on Azure Repos
+        if: ${{ steps.what.outputs.run == 'true' }}
+        env:
+          REPO: ${{ vars.AZURE_DEVOPS_SMOKE_WRITE_REPO }}
+          PLOTWORK_ORG: ${{ vars.AZURE_DEVOPS_SMOKE_PLOTWORK_ORG }}
+          API_URL: https://api-preview.plotwork.dev
+          TASK: ${{ steps.what.outputs.task }}
+          TASK_VERSION: ${{ steps.what.outputs.task_version }}
+          CHANNEL: ${{ steps.what.outputs.channel }}
+          CLI: ${{ steps.what.outputs.cli }}
+        run: |
+          set -euo pipefail
+          if [ -z "$REPO" ]; then
+            echo "::notice::No write smoke: set AZURE_DEVOPS_SMOKE_WRITE_REPO to an Azure Repos repository of $PROJECT, such as plotwork-smoke-write, to test generate's pull request there."
+            exit 0
+          fi
+          bash .github/scripts/smoke-write.sh
+          echo "The write smoke passed on $REPO: a drift opened a pull request, and a run with nothing drifted abandoned it.${PLOTWORK_ORG:+ Both reported drift and published to $PLOTWORK_ORG as a trusted publisher.}" >> "$GITHUB_STEP_SUMMARY"
