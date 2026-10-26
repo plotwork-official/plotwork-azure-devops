@@ -1,11 +1,11 @@
 {
   "manifestVersion": 1,
-  "id": "plotwork-diagrams",
+  "id": "plotwork-diagrams-preview",
   "publisher": "plotwork",
-  "version": "0.1.0",
-  "name": "Plotwork diagrams",
+  "version": "0.1.1001",
+  "name": "Plotwork diagrams (preview)",
   "description": "Fail a pull request whose diagram pictures are stale, or whose diagrams made from Terraform, OpenAPI, Compose and other files have drifted, with the pinned Plotwork command line.",
-  "public": true,
+  "public": false,
   "categories": [
     "Azure Pipelines"
   ],
@@ -79,8 +79,8 @@
         "ms.vss-endpoint.endpoint-types"
       ],
       "properties": {
-        "name": "plotwork",
-        "displayName": "Plotwork",
+        "name": "plotwork-preview",
+        "displayName": "Plotwork (preview)",
         "url": {
           "displayName": "API address",
           "value": "https://api.plotwork.dev",
