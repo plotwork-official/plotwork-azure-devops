@@ -2,6 +2,13 @@
 
 All notable changes to this extension are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and releases follow [semantic versioning](https://semver.org/spec/v2.0.0.html). Betas (`0.2.0-beta.3`) are published as the private preview extension under the Marketplace version `0.2.3`; stable versions as they are. The task's major version, `PlotworkDiagrams@1`, moves only with a change that breaks a pipeline; its minor and patch rise with every release.
 
+## [0.1.3-beta.1](https://github.com/plotwork-official/plotwork-app/compare/azure-devops-v0.1.2...azure-devops-v0.1.3-beta.1) (2026-10-27)
+
+
+### Fixed
+
+* **azure-devops:** run the command line 0.6.1 by default ([cb1a24b](https://github.com/plotwork-official/plotwork-app/commit/cb1a24b90248630814f700eb9421636e46b1e3d0))
+
 ## 0.1.2 (2026-10-27)
 
 The stable release of 0.1.2-beta.1. The changes are listed under those versions below.
