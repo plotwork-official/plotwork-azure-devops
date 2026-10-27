@@ -1,8 +1,6 @@
-> The preview of [Plotwork diagrams](https://marketplace.visualstudio.com/items?itemName=plotwork.plotwork-diagrams), version 0.1.2-beta.1: a private extension (`plotwork-diagrams-preview`) shared with test organisations. Its task is `PlotworkDiagramsPreview@1`.
-
 # Plotwork diagrams for Azure Pipelines
 
-Keeps [Plotwork](https://plotwork.dev) diagrams in step in Azure Pipelines. The task `PlotworkDiagramsPreview@1` fails a pull request whose diagram pictures are stale, whose diagrams have errors, or whose diagrams made from Terraform, OpenAPI, Compose and other files have drifted, marks each problem on its line, and can write the diagrams again and open a pull request with them. It runs the pinned release of the command line [`@buun_group/plotwork`](https://www.npmjs.com/package/@buun_group/plotwork) with `npx`, so it is the same check you run on your machine, and it does what the [Plotwork GitHub Action](https://github.com/plotwork-official/plotwork-action) does.
+Keeps [Plotwork](https://plotwork.dev) diagrams in step in Azure Pipelines. The task `PlotworkDiagrams@1` fails a pull request whose diagram pictures are stale, whose diagrams have errors, or whose diagrams made from Terraform, OpenAPI, Compose and other files have drifted, marks each problem on its line, and can write the diagrams again and open a pull request with them. It runs the pinned release of the command line [`@buun_group/plotwork`](https://www.npmjs.com/package/@buun_group/plotwork) with `npx`, so it is the same check you run on your machine, and it does what the [Plotwork GitHub Action](https://github.com/plotwork-official/plotwork-action) does.
 
 ## TL;DR
 
@@ -29,7 +27,7 @@ steps:
   - task: UseNode@1
     inputs:
       version: 22.x
-  - task: PlotworkDiagramsPreview@1
+  - task: PlotworkDiagrams@1
     inputs:
       mode: check
       paths: |
@@ -50,7 +48,7 @@ steps:
   - task: UseNode@1
     inputs:
       version: 22.x
-  - task: PlotworkDiagramsPreview@1
+  - task: PlotworkDiagrams@1
     inputs:
       mode: drift
 ```
@@ -71,7 +69,7 @@ steps:
   - task: UseNode@1
     inputs:
       version: 22.x
-  - task: PlotworkDiagramsPreview@1
+  - task: PlotworkDiagrams@1
     inputs:
       mode: generate
 ```
@@ -85,7 +83,7 @@ In an Azure Repos repository, the task pushes one commit to `plotwork/diagrams` 
 Add the pipeline as a trusted publisher of your Plotwork organisation (Organisation, Keys & CI, Trusted publishers, Azure Pipelines) with the Azure DevOps organisation, the project, and the pipeline's definition id. Then:
 
 ```yaml
-  - task: PlotworkDiagramsPreview@1
+  - task: PlotworkDiagrams@1
     inputs:
       mode: generate
       reportDrift: true
@@ -97,7 +95,7 @@ With no key, the task asks Azure Pipelines for the job's OpenID Connect token, w
 Or create a Plotwork service connection (Project settings, Service connections, New, Plotwork) with an organisation API key and set `plotworkConnection` to its name, or keep the key in a secret variable and map it into the step:
 
 ```yaml
-  - task: PlotworkDiagramsPreview@1
+  - task: PlotworkDiagrams@1
     inputs:
       mode: drift
       reportDrift: true
