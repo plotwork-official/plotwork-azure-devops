@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
-  "id": "5e3e8a8f-f4a6-4640-b81d-abab57ec7356",
-  "name": "PlotworkDiagramsPreview",
-  "friendlyName": "Plotwork diagrams (preview)",
+  "id": "fa60b84c-39d6-45e9-829b-b9876ee4fa10",
+  "name": "PlotworkDiagrams",
+  "friendlyName": "Plotwork diagrams",
   "description": "Check, sync, validate, render, generate, and drift-check Plotwork diagrams with the pinned command line.",
   "helpUrl": "https://docs.plotwork.dev/diagrams-in-azure-pipelines",
   "helpMarkDown": "Runs the pinned release of [@buun_group/plotwork](https://www.npmjs.com/package/@buun_group/plotwork) with npx. Needs Node 22 or later on the agent: add `UseNode@1` with `version: 22.x` first. [Guide](https://docs.plotwork.dev/diagrams-in-azure-pipelines)",
@@ -18,7 +18,7 @@
   "version": {
     "Major": 1,
     "Minor": 1,
-    "Patch": 4001
+    "Patch": 4
   },
   "minimumAgentVersion": "3.232.1",
   "instanceNameFormat": "Plotwork diagrams: $(mode)",
@@ -213,7 +213,7 @@
     },
     {
       "name": "plotworkConnection",
-      "type": "connectedService:plotwork-preview",
+      "type": "connectedService:plotwork",
       "label": "Plotwork service connection",
       "defaultValue": "",
       "required": false,
@@ -269,7 +269,7 @@
       "name": "cliVersion",
       "type": "string",
       "label": "Command line release",
-      "defaultValue": "0.7.0",
+      "defaultValue": "0.8.0",
       "required": true,
       "groupName": "advanced",
       "helpMarkDown": "The release of `@buun_group/plotwork` the task runs with npx. Pin it, and move it in a change you review."
